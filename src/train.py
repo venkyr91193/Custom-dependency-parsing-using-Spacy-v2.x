@@ -23,6 +23,7 @@ class Train():
     self.test_path = args.test_path
     self.output_dir = args.output_dir
     self.n_iter = args.n_iter
+    self.todi = args.type_of_data_input
   
   def require_gpu(self,gpu):
     if gpu >= 0:
@@ -30,7 +31,12 @@ class Train():
 
   def get_data(self,fpath):
     tmp = LoadData()
-    data = tmp.conllu_to_json(fpath,self.lang)
+    if self.todi == 'conllu_2_spacy':
+      data = tmp.conllu_to_json(fpath,self.lang)
+    elif self.todi == 'conllu_2_text':
+      data = tmp.load_data(fpath)
+    elif self.todi == 'conllu_2_tokens':
+      data = tmp.load_data_tokens(fpath)
     return data
 
   def prevent_sentence_boundary_detection(self,doc):
@@ -209,6 +215,12 @@ if __name__ == "__main__":
   parser.add_argument("--do_update",
                         action='store_true',
                         help="Set flag to update instead of train")
+  parser.add_argument("--type_of_data_input",
+                        type=str,
+                        default='conllu_2_spacy',
+                        help="'conllu_2_spacy' -> Converts .conull to .json format in spacy.\n\
+                              'conllu_2_text' -> Converts .conull to spacy required form\n \
+                              'conllu_2_tokens' -> Converts .conull to spacy required form but tokens instead of text")
   args = parser.parse_args()
   obj = Train(args)
   if args.do_update:

@@ -11,8 +11,8 @@ This model is trained on 2 billion words of text from Reddit (the January 2017 p
 The pre-trained CNN is very small: it's depth 4, width 96,and has only 2000 rows in the hash embeddings table.
 Weights for the serialized model are only 3.2 MB.
 
-# install the dependencies
+# Install the dependencies
 pip install -r requirements.txt
 
-# To run
-Run train.py with the required parameters
+# To start training
+Execute train.py by providing the required parameters
