@@ -13,3 +13,6 @@ Weights for the serialized model are only 3.2 MB.
 
 # install the dependencies
 pip install -r requirements.txt
+
+# To run
+Run train.py with the required parameters

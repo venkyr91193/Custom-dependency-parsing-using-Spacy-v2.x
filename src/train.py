@@ -2,14 +2,17 @@ import argparse
 import os
 import random
 from pathlib import Path
-from seqeval.metrics import classification_report, f1_score
 
 import spacy
+from seqeval.metrics import classification_report, f1_score
+from spacy.cli import train
 from spacy.gold import GoldParse
 from spacy.scorer import Scorer
+from spacy.tokens import Doc
 from spacy.util import compounding, decaying, minibatch
 
 from load_and_convert_data import LoadData
+
 
 class Train():
   def __init__(self,args):
@@ -22,25 +25,55 @@ class Train():
     self.n_iter = args.n_iter
   
   def require_gpu(self,gpu):
-    if gpu:
+    if gpu >= 0:
       spacy.prefer_gpu()
 
   def get_data(self,fpath):
     tmp = LoadData()
-    data = tmp.load_data(fpath)
+    data = tmp.conllu_to_json(fpath,self.lang)
     return data
-  
+
+  def prevent_sentence_boundary_detection(self,doc):
+      for token in doc:
+          # This will entirely disable spaCy's sentence detection
+          token.is_sent_start = False
+      return doc
+
   def train(self):
     '''
     Using spacy V2.1 to train the dependency parser
     '''
+    # getting data in spacy required format
+    train_data = self.get_data(self.train_path)
+    test_data = self.get_data(self.test_path)
+
+    # pretrained weights
+    pretrain_weights_path = Path(os.path.join(os.path.dirname(os.path.realpath(__file__)),\
+      'pretrained_weights','pretrained_weights.bin'))
+
+    train_filename = self.train_path.rsplit('.',1)[0] + '.json'
+    dev_filename = self.test_path.rsplit('.',1)[0] + '.json'
+
+    # call the train function
+    train(self.lang,Path(self.output_dir),Path(train_filename),Path(dev_filename),raw_text=None,\
+          base_model=None,pipeline="parser",vectors=None,n_iter=self.n_iter,\
+          n_early_stopping=None,n_examples=0,use_gpu=self.gpu,version="0.0.0",\
+          meta_path=None,init_tok2vec=pretrain_weights_path,parser_multitasks="",\
+          entity_multitasks="",noise_level=0.0,eval_beam_widths="",gold_preproc=False,\
+          learn_tokens=False,verbose=False,debug=False)
+
+  def update(self):
+    '''
+    Using spacy V2.1 to update the dependency parser
+    '''
+    dropout = decaying(0.5, 0.2, 1e-4)
 
     self.require_gpu(self.gpu)
 
     # getting data in spacy required format
     data = self.get_data(self.train_path)
 
-    random.seed(770)
+    random.seed(777)
     random.shuffle(data)
 
     if self.model is not None:
@@ -59,10 +92,21 @@ class Train():
     else:
         parser = nlp.get_pipe("parser")
 
+    # sentence segmentation diable
+    #nlp.add_pipe(self.prevent_sentence_boundary_detection, name='prevent-sbd', before='parser')
+
+    # change the tokens to spacy Doc
+    new_data = list()
+    for dat in data:
+      assert(len(Doc(nlp.vocab, words=dat[0])) == len(dat[1]['deps']))
+      assert(len(Doc(nlp.vocab, words=dat[0])) == len(dat[1]['heads']))
+      doc = Doc(nlp.vocab, words=dat[0])
+      new_data.append((doc,GoldParse(doc,heads=dat[1]['heads'],deps=dat[1]['deps'])))
+
     # add labels to the parser
     for _, annotations in data:
-        for dep in annotations.get("deps", []):
-            parser.add_label(dep)
+      for dep in annotations.get("deps", []):
+        parser.add_label(dep)
 
     pretrain_weights_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),\
       'pretrained_weights','pretrained_weights.bin')
@@ -77,13 +121,15 @@ class Train():
     with nlp.disable_pipes(*other_pipes):  # only train parser
         optimizer = nlp.begin_training()
         for itn in range(self.n_iter):
-            random.shuffle(data)
+            random.shuffle(new_data)
             losses = {}
             # batch up the examples using spaCy's minibatch
-            batches = minibatch(data, size=compounding(4.0, 32.0, 1.001))
+            batches = minibatch(new_data, size=compounding(4.0, 32.0, 1.001))
             for batch in batches:
                 texts, annotations = zip(*batch)
-                nlp.update(texts, annotations, sgd=optimizer, losses=losses)
+                print(type(texts[0]))
+                print(annotations[0])
+                nlp.update(texts, annotations, sgd=optimizer, losses=losses, drop=next(dropout))
             print("Losses", losses)
 
     # save model to output directory
@@ -131,12 +177,12 @@ if __name__ == "__main__":
                         type=str,
                         required=True,
                         default=None,
-                        help="Data source path for train")
+                        help="Data source path for train data in conllu format")
   parser.add_argument("--test_path",
                         type=str,
                         required=True,
                         default=None,
-                        help="Data source path for test")
+                        help="Data source path for test data in conllu format")
   parser.add_argument("--output_dir",
                         type=str,
                         required=True,
@@ -149,7 +195,8 @@ if __name__ == "__main__":
                         help="Language of the model")
   # optional
   parser.add_argument("--gpu",
-                        action='store_true',
+                        type=int,
+                        default=-1,
                         help="Whether to use GPU.")
   parser.add_argument("--n_iter",
                         type=int,
@@ -159,6 +206,12 @@ if __name__ == "__main__":
                         type=str,
                         default=None,
                         help="Base model to train on or blank model\nExample:  en_core_web_lg")
+  parser.add_argument("--do_update",
+                        action='store_true',
+                        help="Set flag to update instead of train")
   args = parser.parse_args()
   obj = Train(args)
-  obj.train()
+  if args.do_update:
+    obj.update()
+  else:
+    obj.train()

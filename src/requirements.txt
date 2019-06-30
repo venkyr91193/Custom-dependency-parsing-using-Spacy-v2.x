@@ -1,3 +1,4 @@
 # necessary libraries
+spacy
 conllu
 seqeval
