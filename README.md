@@ -12,7 +12,7 @@ The pre-trained CNN is very small: it's depth 4, width 96,and has only 2000 rows
 Weights for the serialized model are only 3.2 MB.
 
 # Install the dependencies
-pip install -r requirements.txt
+    >>> pip install -r requirements.txt
 
 # To start training
 Execute train.py by providing the required parameters
